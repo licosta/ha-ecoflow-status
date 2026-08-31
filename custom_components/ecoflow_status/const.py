@@ -43,3 +43,17 @@ STATES: Final[tuple[str, ...]] = (STATE_CHARGING, STATE_DISCHARGING, STATE_STAND
 DEFAULT_SCAN_INTERVAL: Final = 30
 MIN_SCAN_INTERVAL: Final = 10
 MAX_SCAN_INTERVAL: Final = 300
+
+# Device profiles (battery vs panel/inverter). Detected from productName in
+# the quota response. Battery devices get the 8 battery sensors; panel devices
+# get the 7 panel sensors. Stream AC Pro is a panel, not a battery.
+DEVICE_PROFILE_BATTERY: Final = "battery"
+DEVICE_PROFILE_PANEL: Final = "panel"
+PANEL_PRODUCT_HINTS: Final[tuple[str, ...]] = (
+    "stream ac pro",
+    "stream ac",
+    "smart home panel",
+    "powerstream",
+    "inverter",
+    "microinverter",
+)

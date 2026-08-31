@@ -22,8 +22,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    DEVICE_PROFILE_BATTERY,
+    DEVICE_PROFILE_PANEL,
     DOMAIN,
     MANUFACTURER,
+    PANEL_PRODUCT_HINTS,
     POWER_THRESHOLD_W,
     STATE_CHARGING,
     STATE_DISCHARGING,
@@ -89,6 +92,18 @@ KEY_REMAIN_DSG_MIN = (
 KEY_PV_SUM_W = ("powGetPvSum",)
 KEY_SYS_LOAD_W = ("powGetSysLoad",)
 KEY_SYS_GRID_W = ("powGetSysGrid",)
+
+# Panel / inverter keys (Stream AC Pro, PowerStream, Smart Home Panel)
+KEY_PANEL_GRID_W = ("powGetSysGrid", "gridConnectionPower")
+KEY_PANEL_SOLAR_W = ("powGetPvSum",)
+KEY_PANEL_LOAD_W = ("powGetSysLoad",)
+KEY_PANEL_BATTERY_W = ("powGetBpCms", "bmsBmsStatus.chargePower")
+KEY_PANEL_FEED_IN_MODE = ("feedGridMode",)
+KEY_PANEL_BACKUP_SOC = ("backupReverseSoc",)
+KEY_PANEL_ENERGY_STRATEGY = (
+    "energyStrategyOperateMode.operateSelfPoweredOpen",
+    "energyStrategyOperateMode.operateIntelligentScheduleModeOpen",
+)
 
 
 def _read(quota: dict[str, Any], keys: tuple[str, ...]) -> Any | None:
@@ -255,6 +270,67 @@ SENSORS_PER_DEVICE: tuple[SensorEntityDescription, ...] = (
 )
 
 
+# ---------------------------------------------------------------- panel sensors
+# For smart home panels / inverters (Stream AC Pro, PowerStream, etc.) the
+# battery-oriented sensors above don't make sense. These are the panel-specific
+# sensors: grid in/out, solar, system load, panel battery power, feed-in mode,
+# energy strategy, backup reserve.
+PANEL_SENSORS: tuple[SensorEntityDescription, ...] = (
+    SensorEntityDescription(
+        key="grid_power",
+        translation_key="grid_power",
+        name="Grid Power",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+    ),
+    SensorEntityDescription(
+        key="solar_power",
+        translation_key="solar_power",
+        name="Solar Power",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+    ),
+    SensorEntityDescription(
+        key="system_load",
+        translation_key="system_load",
+        name="System Load",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+    ),
+    SensorEntityDescription(
+        key="panel_battery_power",
+        translation_key="panel_battery_power",
+        name="Battery Power (Panel)",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+    ),
+    SensorEntityDescription(
+        key="feed_in_mode",
+        translation_key="feed_in_mode",
+        name="Feed-in Mode",
+        icon="mdi:transmission-tower-export",
+    ),
+    SensorEntityDescription(
+        key="backup_reserve_soc",
+        translation_key="backup_reserve_soc",
+        name="Backup Reserve",
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=PERCENTAGE,
+    ),
+    SensorEntityDescription(
+        key="energy_strategy",
+        translation_key="energy_strategy",
+        name="Energy Strategy",
+        icon="mdi:lightning-bolt",
+    ),
+)
+
+
 # --------------------------------------------------------------------- platform
 
 
@@ -312,6 +388,57 @@ def _build_device_info(
         sw_version=sw_version,
         serial_number=sn,
     )
+
+
+def _detect_device_profile(quota: dict[str, Any] | None) -> str:
+    """Return DEVICE_PROFILE_BATTERY or DEVICE_PROFILE_PANEL.
+
+    Looks at productName / productDetail from the quota. If the name contains
+    a panel/inverter hint (e.g. "Stream AC Pro", "PowerStream"), treat as panel.
+    Default to battery.
+    """
+    if not quota or not isinstance(quota, dict):
+        return DEVICE_PROFILE_BATTERY
+    name_candidates: list[str] = []
+    for k in ("productName", "productDetail", "productType", "deviceName"):
+        v = quota.get(k)
+        if isinstance(v, str) and v:
+            name_candidates.append(v.lower())
+    for hint in PANEL_PRODUCT_HINTS:
+        for name in name_candidates:
+            if hint in name:
+                return DEVICE_PROFILE_PANEL
+    return DEVICE_PROFILE_BATTERY
+
+
+# --------------------------------------------------------------------- platform
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up sensors from a config entry.
+
+    The set of sensors per device depends on the product type detected from
+    the first quota response:
+    - battery devices (Ultra X, Delta, River): 8 battery sensors
+    - panel devices (Stream AC Pro, PowerStream): 7 panel sensors
+    """
+    coordinator: EcoFlowStatusCoordinator = hass.data[DOMAIN][entry.entry_id]
+    entities: list[EcoFlowSensorEntity] = []
+    for sn in coordinator.selected_sns:
+        quota = coordinator.data.get(sn) if coordinator.data else None
+        profile = _detect_device_profile(quota)
+        device_info = _build_device_info(coordinator, sn)
+        if profile == DEVICE_PROFILE_PANEL:
+            for desc in PANEL_SENSORS:
+                entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
+        else:
+            for desc in SENSORS_PER_DEVICE:
+                entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
+    async_add_entities(entities)
 
 
 # --------------------------------------------------------------------- entity
@@ -402,6 +529,28 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             return _derive_remaining_min(quota, KEY_REMAIN_CHG_MIN, signed=True)
         if key == "remaining_discharge_time":
             return _derive_remaining_min(quota, KEY_REMAIN_DSG_MIN, signed=True)
+        # Panel sensors
+        if key == "grid_power":
+            return _to_float(_read(quota, KEY_PANEL_GRID_W))
+        if key == "solar_power":
+            return _to_float(_read(quota, KEY_PANEL_SOLAR_W))
+        if key == "system_load":
+            return _to_float(_read(quota, KEY_PANEL_LOAD_W))
+        if key == "panel_battery_power":
+            return _to_float(_read(quota, KEY_PANEL_BATTERY_W))
+        if key == "feed_in_mode":
+            mode = _to_float(_read(quota, KEY_PANEL_FEED_IN_MODE))
+            return int(mode) if mode is not None else None
+        if key == "backup_reserve_soc":
+            return _to_float(_read(quota, KEY_PANEL_BACKUP_SOC))
+        if key == "energy_strategy":
+            sp = _read(quota, "energyStrategyOperateMode.operateSelfPoweredOpen")
+            sch = _read(quota, "energyStrategyOperateMode.operateIntelligentScheduleModeOpen")
+            if sch is True or sch == "1" or sch == 1:
+                return "Scheduled"
+            if sp is True or sp == "1" or sp == 1:
+                return "Self-powered"
+            return "Standard"
         return None
 
     @callback

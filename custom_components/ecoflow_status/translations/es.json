@@ -69,6 +69,32 @@
       },
       "remaining_discharge_time": {
         "name": "Tiempo restante de descarga"
+      },
+      "grid_power": {
+        "name": "Potencia de red"
+      },
+      "solar_power": {
+        "name": "Potencia solar"
+      },
+      "system_load": {
+        "name": "Consumo del sistema"
+      },
+      "panel_battery_power": {
+        "name": "Potencia batería (panel)"
+      },
+      "feed_in_mode": {
+        "name": "Modo feed-in"
+      },
+      "backup_reserve_soc": {
+        "name": "Reserva backup"
+      },
+      "energy_strategy": {
+        "name": "Estrategia energética",
+        "state": {
+          "self-powered": "Autoconsumo",
+          "scheduled": "Programada",
+          "standard": "Estándar"
+        }
       }
     }
   }
