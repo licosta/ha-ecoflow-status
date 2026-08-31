@@ -27,6 +27,7 @@ from .const import (
     DEVICE_PROFILE_PANEL,
     DOMAIN,
     HYBRID_PRODUCT_HINTS,
+    HYBRID_SN_SUFFIXES,
     KNOWN_DEVICE_MODELS,
     MANUFACTURER,
     PANEL_PRODUCT_HINTS,
@@ -546,6 +547,13 @@ def _detect_device_profile(
     name = coordinator.device_models.get(sn) if hasattr(coordinator, "device_models") else None
     if name:
         name_candidates.append(_norm(str(name)))
+    # Fallback: if /device/list returned an empty productName, derive a name
+    # from the SN-suffix lookup table so the hint matcher still has something
+    # to work with (Stream CA Pro would otherwise land on the SN-suffix PANEL
+    # fallback instead of being recognised as hybrid).
+    sn_suffix = sn[-6:].upper() if sn else ""
+    if not name_candidates and sn_suffix in KNOWN_DEVICE_MODELS:
+        name_candidates.append(_norm(KNOWN_DEVICE_MODELS[sn_suffix]))
     quota = coordinator.data.get(sn) if coordinator.data else None
     if isinstance(quota, dict):
         for k in ("productName", "productDetail", "productType", "deviceName"):
@@ -572,10 +580,17 @@ def _detect_device_profile(
                     sn, hint, n,
                 )
                 return DEVICE_PROFILE_PANEL
-    # Fallback: known panel SN suffixes. Logs a louder warning because this
-    # means the device list didn't return a usable productName and we're
-    # inferring from the SN — the user should probably also report this.
-    sn_suffix = sn[-6:].upper() if sn else ""
+    # Fallback: known hybrid SN suffixes (checked BEFORE panel so a hybrid is
+    # never misclassified). These are the last line of defence when neither
+    # the device list nor the quota response include a usable productName.
+    if sn_suffix in {s.upper() for s in HYBRID_SN_SUFFIXES}:
+        _LOGGER.warning(
+            "EcoFlow device %s detected as HYBRID via SN-suffix fallback (suffix=%s). "
+            "No productName matched any hint; please report this so the hint list "
+            "can be extended.",
+            sn, sn_suffix,
+        )
+        return DEVICE_PROFILE_HYBRID
     if sn_suffix in {s.upper() for s in PANEL_SN_SUFFIXES}:
         _LOGGER.warning(
             "EcoFlow device %s detected as PANEL via SN-suffix fallback (suffix=%s). "

@@ -76,7 +76,15 @@ PANEL_PRODUCT_HINTS: Final[tuple[str, ...]] = (
 # SN suffixes (last 6 chars) known to be panel-class devices. Used as a last
 # resort when the device list returns no usable productName for a device.
 PANEL_SN_SUFFIXES: Final[tuple[str, ...]] = (
-    "1N0006",   # Stream AC Pro (verified)
+    # Reserved for future pure-panel devices. Stream AC Pro moved to
+    # HYBRID_SN_SUFFIXES since it actually carries a battery too.
+)
+# SN suffixes (last 6 chars, uppercase) that map to hybrid (battery + inverter)
+# devices. Checked BEFORE PANEL_SN_SUFFIXES so a hybrid is never misclassified
+# as a pure panel.
+HYBRID_SN_SUFFIXES: Final[tuple[str, ...]] = (
+    "1N0006",   # Stream AC Pro (verified: has battery + grid inverter)
+    "5L0686",   # Stream Ultra X (verified: has battery + 4 MPPT inputs)
 )
 
 # SN-suffix (last 6 chars, uppercase) -> human-readable model name. Used as a
