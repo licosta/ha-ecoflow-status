@@ -25,6 +25,7 @@ from .const import (
     DEVICE_PROFILE_BATTERY,
     DEVICE_PROFILE_PANEL,
     DOMAIN,
+    KNOWN_DEVICE_MODELS,
     MANUFACTURER,
     PANEL_PRODUCT_HINTS,
     PANEL_SN_SUFFIXES,
@@ -389,11 +390,23 @@ def _build_device_info(
                 model = str(quota[k])
                 break
     if not name:
-        name = model_name or f"EcoFlow {sn[-6:]}"
+        # Last-resort: hard-coded mapping by SN suffix so devices with no
+        # productName in the API still get a useful name.
+        sn_suffix = sn[-6:].upper() if sn else ""
+        if sn_suffix in KNOWN_DEVICE_MODELS:
+            name = KNOWN_DEVICE_MODELS[sn_suffix]
+        else:
+            name = model_name or f"EcoFlow {sn[-6:]}"
+    if not model:
+        sn_suffix = sn[-6:].upper() if sn else ""
+        if sn_suffix in KNOWN_DEVICE_MODELS:
+            model = KNOWN_DEVICE_MODELS[sn_suffix]
+        else:
+            model = model_name or "EcoFlow device"
     return DeviceInfo(
         identifiers={(DOMAIN, sn)},
         manufacturer=MANUFACTURER,
-        model=model or model_name or "EcoFlow device",
+        model=model,
         name=name,
         sw_version=sw_version,
         serial_number=sn,
@@ -619,6 +632,11 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
                 v = quota.get(k)
                 if isinstance(v, str) and v:
                     return v
+            # Last resort: hard-coded mapping by SN suffix (EcoFlow doesn't
+            # always include productName in the API responses for Stream devices).
+            sn_suffix = self._sn[-6:].upper() if self._sn else ""
+            if sn_suffix in KNOWN_DEVICE_MODELS:
+                return KNOWN_DEVICE_MODELS[sn_suffix]
             return None
         if key == "device_profile":
             return _detect_device_profile(self.coordinator, self._sn)

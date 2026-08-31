@@ -68,3 +68,12 @@ PANEL_PRODUCT_HINTS: Final[tuple[str, ...]] = (
 PANEL_SN_SUFFIXES: Final[tuple[str, ...]] = (
     "1N0006",   # Stream AC Pro (verified)
 )
+
+# SN-suffix (last 6 chars, uppercase) -> human-readable model name. Used as a
+# last-resort fallback for the `device_model` diagnostic sensor when neither
+# /device/list nor the quota response include a productName. Extend as new
+# devices are verified.
+KNOWN_DEVICE_MODELS: Final[dict[str, str]] = {
+    "1N0006": "Stream AC Pro",
+    "5L0686": "Stream Ultra X",
+}
