@@ -1,0 +1,66 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Conectar con EcoFlow Developer Platform",
+        "description": "Introduce tus credenciales de EcoFlow Open API. Las consigues en https://developer-eu.ecoflow.com (EU) o https://developer.ecoflow.com (global).",
+        "data": {
+          "region": "Región",
+          "access_key": "Access Key",
+          "secret_key": "Secret Key"
+        }
+      },
+      "devices": {
+        "title": "Selecciona dispositivos",
+        "description": "Elige los dispositivos EcoFlow que quieres monitorizar. Cada uno se añade a Home Assistant con 5 sensores: Estado, Potencia de carga, Potencia de descarga, Batería (SoC) y Salud (SoH).",
+        "data": {
+          "devices": "Dispositivos"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se puede conectar con EcoFlow. Comprueba la región, tu red y que las claves sean válidas.",
+      "invalid_auth": "Autenticación fallida. Revisa el Access Key y el Secret Key.",
+      "no_devices": "No hay dispositivos en esta cuenta. Empareja tus dispositivos primero en la app de EcoFlow.",
+      "no_device_selected": "Selecciona al menos un dispositivo.",
+      "unknown": "Error inesperado. Mira los logs."
+    },
+    "abort": {
+      "already_configured": "Este conjunto de dispositivos ya está configurado."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de EcoFlow Status",
+        "data": {
+          "scan_interval": "Intervalo de sondeo (segundos)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "Estado",
+        "state": {
+          "charging": "Cargando",
+          "discharging": "Descargando",
+          "standby": "En espera"
+        }
+      },
+      "charge_power": {
+        "name": "Potencia de carga"
+      },
+      "discharge_power": {
+        "name": "Potencia de descarga"
+      },
+      "soc": {
+        "name": "Batería"
+      },
+      "soh": {
+        "name": "Salud de la batería"
+      }
+    }
+  }
+}

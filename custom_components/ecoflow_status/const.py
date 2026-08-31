@@ -1,0 +1,45 @@
+"""Constants for the EcoFlow Status integration."""
+from __future__ import annotations
+
+from typing import Final
+
+DOMAIN: Final = "ecoflow_status"
+MANUFACTURER: Final = "EcoFlow"
+DEFAULT_NAME: Final = "EcoFlow Status"
+
+# Configuration keys
+CONF_ACCESS_KEY: Final = "access_key"
+CONF_SECRET_KEY: Final = "secret_key"
+CONF_REGION: Final = "region"
+CONF_DEVICES: Final = "devices"
+CONF_SCAN_INTERVAL: Final = "scan_interval"
+
+# Regions / API base URLs
+REGION_EU: Final = "eu"
+REGION_GLOBAL: Final = "global"
+REGION_NA: Final = "na"
+REGIONS: Final[dict[str, str]] = {
+    REGION_EU: "https://api-e.ecoflow.com",
+    REGION_GLOBAL: "https://api.ecoflow.com",
+    REGION_NA: "https://api-a.ecoflow.com",
+}
+DEFAULT_REGION: Final = REGION_EU
+
+# Endpoints
+PATH_DEVICE_LIST: Final = "/iot-open/sign/device/list"
+PATH_DEVICE_QUOTA_ALL: Final = "/iot-open/sign/device/quota/all"
+
+# State thresholds
+# Below this, charge/discharge power is treated as 0 (BMS self-consumption)
+POWER_THRESHOLD_W: Final = 5.0
+
+# Battery states
+STATE_CHARGING: Final = "charging"
+STATE_DISCHARGING: Final = "discharging"
+STATE_STANDBY: Final = "standby"
+STATES: Final[tuple[str, ...]] = (STATE_CHARGING, STATE_DISCHARGING, STATE_STANDBY)
+
+# Defaults
+DEFAULT_SCAN_INTERVAL: Final = 30
+MIN_SCAN_INTERVAL: Final = 10
+MAX_SCAN_INTERVAL: Final = 300

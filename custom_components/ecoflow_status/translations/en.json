@@ -1,0 +1,66 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to EcoFlow Developer Platform",
+        "description": "Enter your EcoFlow Open API credentials. Get them at https://developer-eu.ecoflow.com (EU) or https://developer.ecoflow.com (global).",
+        "data": {
+          "region": "Region",
+          "access_key": "Access Key",
+          "secret_key": "Secret Key"
+        }
+      },
+      "devices": {
+        "title": "Select devices",
+        "description": "Pick the EcoFlow devices you want to track. Each one becomes a device in Home Assistant with 5 sensors: State, Charge Power, Discharge Power, Battery (SoC) and State of Health.",
+        "data": {
+          "devices": "Devices"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach EcoFlow. Check the region, your network and that the keys are valid.",
+      "invalid_auth": "Authentication failed. Double-check the Access Key and Secret Key.",
+      "no_devices": "No devices found on this account. Pair your devices in the EcoFlow app first.",
+      "no_device_selected": "Pick at least one device.",
+      "unknown": "Unexpected error. See the logs."
+    },
+    "abort": {
+      "already_configured": "This set of devices is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EcoFlow Status options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "State",
+        "state": {
+          "charging": "Charging",
+          "discharging": "Discharging",
+          "standby": "Standby"
+        }
+      },
+      "charge_power": {
+        "name": "Charge Power"
+      },
+      "discharge_power": {
+        "name": "Discharge Power"
+      },
+      "soc": {
+        "name": "Battery"
+      },
+      "soh": {
+        "name": "State of Health"
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "domain": "ecoflow_status",
+  "name": "EcoFlow Status",
+  "version": "0.1.0",
+  "documentation": "https://github.com/example/ha-ecoflow-status",
+  "issue_tracker": "https://github.com/example/ha-ecoflow-status/issues",
+  "codeowners": ["@example"],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "integration_type": "device",
+  "dependencies": [],
+  "requirements": ["aiohttp>=3.9.0"],
+  "loggers": ["custom_components.ecoflow_status"]
+}
