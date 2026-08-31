@@ -355,3 +355,17 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose a slice of the raw quota so we can debug key mismatches.
+
+        Showing the full payload would be too noisy; the first ~12 keys are
+        enough to see the naming convention the device uses (camelCase vs
+        snake_case, single vs double prefix). Remove once KEY_* are confirmed.
+        """
+        quota = self.coordinator.data.get(self._sn) if self.coordinator.data else None
+        if not quota or not isinstance(quota, dict):
+            return None
+        items = list(quota.items())[:12]
+        return {"raw_quota_sample": dict(items)}
