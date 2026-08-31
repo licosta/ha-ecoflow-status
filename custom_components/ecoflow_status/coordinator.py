@@ -52,6 +52,9 @@ class EcoFlowStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]])
             return {}
         results: dict[str, dict[str, Any]] = {}
         errors: list[str] = []
+        # Cache last-known data so we can fall back to it on per-device errors.
+        # `self.data` is None on the first refresh, so guard explicitly.
+        previous = self.data if self.data is not None else {}
         for sn in self._selected_sns:
             try:
                 results[sn] = await self.client.get_all_quota(sn)
@@ -59,8 +62,8 @@ class EcoFlowStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]])
                 # Keep last-known data; log the error. Don't blow up the whole poll.
                 _LOGGER.warning("Failed to fetch quota for %s: %s", sn, err)
                 errors.append(f"{sn}: {err}")
-                if sn in self.data:
-                    results[sn] = self.data[sn]
+                if sn in previous:
+                    results[sn] = previous[sn]
         if not results and errors:
             # No data at all -> surface the error so entities go unavailable.
             raise UpdateFailed("; ".join(errors))
