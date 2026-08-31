@@ -141,7 +141,8 @@ class EcoFlowClient:
         url = f"{self._base_url}{path}"
         if method == "GET" and params:
             # Build query string from the same sorted flat dict we signed.
-            flat_items = sorted(self._flatten(params).items())
+            # NOTE: _flatten returns list[tuple], not dict, so we sort the list directly.
+            flat_items = sorted(self._flatten(params))
             qs = "&".join(f"{k}={v}" for k, v in flat_items)
             url = f"{url}?{qs}"
         kwargs: dict[str, Any] = {
