@@ -82,6 +82,9 @@
       "pv4_power": {
         "name": "PV4 Input"
       },
+      "pv_total_power": {
+        "name": "PV Total"
+      },
       "grid_power": {
         "name": "Grid Power"
       },

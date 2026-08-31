@@ -82,6 +82,9 @@
       "pv4_power": {
         "name": "Entrada PV4"
       },
+      "pv_total_power": {
+        "name": "PV Total"
+      },
       "grid_power": {
         "name": "Potencia de red"
       },

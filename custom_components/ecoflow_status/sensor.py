@@ -59,6 +59,7 @@ KEY_SOH = (
 # Stream key is `powGetSysLoadFromBp` per toli's STREAM_GET_SYS_LOAD_FROM_BP.
 # The sign convention may need flip if EcoFlow uses the opposite.
 KEY_BATTERY_POWER = (
+    "powGetBpCms",                    # Stream series (CA Pro, Ultra X) - signed: +chg / -dsg
     "powGetSysLoadFromBp",
     "powGetBp",
     "powGetBatteryPower",
@@ -378,6 +379,18 @@ PV_SENSORS: tuple[SensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.WATT,
         icon="mdi:solar-panel",
+    ),
+    SensorEntityDescription(
+        # Aggregated solar total. Useful for devices where individual MPPT
+        # inputs aren't exposed in the Open API (Stream series only returns
+        # `powGetPvSum`, no per-string breakdown).
+        key="pv_total_power",
+        translation_key="pv_total_power",
+        name="PV Total",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        icon="mdi:solar-panel-large",
     ),
 )
 
@@ -761,6 +774,8 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             return _to_float(_read(quota, KEY_PV3_W))
         if key == "pv4_power":
             return _to_float(_read(quota, KEY_PV4_W))
+        if key == "pv_total_power":
+            return _to_float(_read(quota, KEY_PV_SUM_W))
         # Panel sensors (track which quota key was actually used)
         if key == "grid_power":
             v, k = _read_with_key(quota, KEY_PANEL_GRID_W)
