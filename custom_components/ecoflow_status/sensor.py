@@ -36,34 +36,59 @@ _LOGGER = logging.getLogger(__name__)
 
 # A few key families in the EcoFlow quota response.
 # Keys vary slightly across product lines, so we try a list in order.
-KEY_SOC = ("bmsBmsStatus.soc", "bmsBmsStatus.f32ShowSoc", "bms_emsStatus.f32ShowSoc")
-KEY_SOH = ("bmsBmsStatus.soh", "bms_emsStatus.soh")
-KEY_CHARGE_W = (
-    "bmsBmsStatus.chargePower",  # W (Stream series) or mW (some Delta) - we keep raw and the entity converts
+KEY_SOC = (
+    "cmsBattSoc",                    # Stream CA Pro / Ultra X (verified by user)
+    "bmsBmsStatus.soc",
+    "bmsBmsStatus.f32ShowSoc",
+    "bms_emsStatus.f32ShowSoc",
+)
+KEY_SOH = (
+    "cmsBattSoh",                    # Stream (best guess, needs verify)
+    "bmsBmsStatus.soh",
+    "bms_emsStatus.soh",
+)
+# Battery power: positive while charging, negative while discharging.
+# Stream key is `powGetSysLoadFromBp` per toli's STREAM_GET_SYS_LOAD_FROM_BP.
+# The sign convention may need flip if EcoFlow uses the opposite.
+KEY_BATTERY_POWER = (
+    "powGetSysLoadFromBp",
+    "powGetBp",
+    "powGetBatteryPower",
+    "bmsBmsStatus.chargePower",       # Delta fallback (W)
     "pd.wattsInSum",
 )
-KEY_DISCHARGE_W = (
-    "bmsBmsStatus.dischargePower",
-    "inv.outputWatts",
-    "pd.wattsOutSum",
-)
+KEY_CHARGE_W = KEY_BATTERY_POWER
+KEY_DISCHARGE_W = KEY_BATTERY_POWER
 # 0=idle, 1=discharging, 2=charging (newer devices like Stream Ultra / CA Pro)
-KEY_STATE_CODE_NEW = ("bms_emsStatus.sysChgDsgState",)
+KEY_STATE_CODE_NEW = (
+    "bms_emsStatus.sysChgDsgState",
+    "cmsBattChgDsgState",            # Stream best guess
+)
 # 1=discharging, 2=charging (no idle=0 convention, missing == idle)
 KEY_STATE_CODE_OLD = ("pd.chgDsgState",)
 KEY_CYCLES = (
+    "cmsBmsCycles",                   # Stream best guess
+    "cmsBattCycles",
     "bmsBmsStatus.cycles",
     "bms_emsStatus.cycles",
 )
 # Charging remaining minutes (positive while charging, may be 0/undefined when not)
 KEY_REMAIN_CHG_MIN = (
+    "cmsBmsChgRemainTime",
+    "cmsBattChgRemainTime",
     "bms_emsStatus.chgRemainTime",
-    "bmsBmsStatus.remainTime",  # signed: positive=charging, negative=discharging
+    "bmsBmsStatus.remainTime",        # signed: positive=charging, negative=discharging
 )
 # Discharging remaining minutes (positive while discharging, may be 0/undefined when not)
 KEY_REMAIN_DSG_MIN = (
+    "cmsBmsDsgRemainTime",
+    "cmsBattDsgRemainTime",
     "bms_emsStatus.dsgRemainTime",
 )
+# Stream energy flow keys (used to derive battery power when KEY_BATTERY_POWER is absent)
+KEY_PV_SUM_W = ("powGetPvSum",)
+KEY_SYS_LOAD_W = ("powGetSysLoad",)
+KEY_SYS_GRID_W = ("powGetSysGrid",)
 
 
 def _read(quota: dict[str, Any], keys: tuple[str, ...]) -> Any | None:
@@ -331,14 +356,42 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             code = _read_state_code(quota)
             if code is not None:
                 return _state_from_code(code)
-            # Fall back to deriving from current power.
-            charge = _to_float(_read(quota, KEY_CHARGE_W))
-            discharge = _to_float(_read(quota, KEY_DISCHARGE_W))
-            return _derive_state(charge, discharge)
+            # Fall back to battery power (signed): +charging, -discharging.
+            bp = _to_float(_read(quota, KEY_BATTERY_POWER))
+            if bp is not None:
+                if bp > POWER_THRESHOLD_W: return STATE_CHARGING
+                if bp < -POWER_THRESHOLD_W: return STATE_DISCHARGING
+                return STATE_STANDBY
+            # Last resort: derive from PV/Load/Grid energy balance (Stream).
+            pv = _to_float(_read(quota, KEY_PV_SUM_W)) or 0.0
+            load = _to_float(_read(quota, KEY_SYS_LOAD_W)) or 0.0
+            grid = _to_float(_read(quota, KEY_SYS_GRID_W)) or 0.0
+            # Net battery flow: PV + Grid - Load. If > 0, battery absorbing (charging).
+            net_battery = pv - load + grid
+            if net_battery > POWER_THRESHOLD_W: return STATE_CHARGING
+            if net_battery < -POWER_THRESHOLD_W: return STATE_DISCHARGING
+            return STATE_STANDBY
         if key == "charge_power":
-            return _to_float(_read(quota, KEY_CHARGE_W))
+            bp = _to_float(_read(quota, KEY_BATTERY_POWER))
+            if bp is None:
+                # Derive from energy balance
+                pv = _to_float(_read(quota, KEY_PV_SUM_W)) or 0.0
+                load = _to_float(_read(quota, KEY_SYS_LOAD_W)) or 0.0
+                grid = _to_float(_read(quota, KEY_SYS_GRID_W)) or 0.0
+                net_battery = pv - load + grid
+                return max(net_battery, 0.0) if net_battery > POWER_THRESHOLD_W else 0.0
+            # Signed: positive = charging
+            return max(bp, 0.0) if bp > POWER_THRESHOLD_W else 0.0
         if key == "discharge_power":
-            return _to_float(_read(quota, KEY_DISCHARGE_W))
+            bp = _to_float(_read(quota, KEY_BATTERY_POWER))
+            if bp is None:
+                pv = _to_float(_read(quota, KEY_PV_SUM_W)) or 0.0
+                load = _to_float(_read(quota, KEY_SYS_LOAD_W)) or 0.0
+                grid = _to_float(_read(quota, KEY_SYS_GRID_W)) or 0.0
+                net_battery = pv - load + grid
+                return max(-net_battery, 0.0) if net_battery < -POWER_THRESHOLD_W else 0.0
+            # Signed: negative = discharging
+            return max(-bp, 0.0) if bp < -POWER_THRESHOLD_W else 0.0
         if key == "soc":
             return _to_float(_read(quota, KEY_SOC))
         if key == "soh":
@@ -346,7 +399,6 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
         if key == "cycles":
             return _to_float(_read(quota, KEY_CYCLES))
         if key == "remaining_charge_time":
-            # bmsBmsStatus.remainTime is signed: positive while charging.
             return _derive_remaining_min(quota, KEY_REMAIN_CHG_MIN, signed=True)
         if key == "remaining_discharge_time":
             return _derive_remaining_min(quota, KEY_REMAIN_DSG_MIN, signed=True)
@@ -358,14 +410,13 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Expose a slice of the raw quota so we can debug key mismatches.
+        """Expose the full raw quota for debugging key mismatches.
 
-        Showing the full payload would be too noisy; the first ~12 keys are
-        enough to see the naming convention the device uses (camelCase vs
-        snake_case, single vs double prefix). Remove once KEY_* are confirmed.
+        The first 30 keys are enough to see all relevant quota entries for any
+        device family. Remove once KEY_* are confirmed for the user's devices.
         """
         quota = self.coordinator.data.get(self._sn) if self.coordinator.data else None
         if not quota or not isinstance(quota, dict):
             return None
-        items = list(quota.items())[:12]
+        items = list(quota.items())[:30]
         return {"raw_quota_sample": dict(items)}
