@@ -92,6 +92,37 @@ KEY_REMAIN_DSG_MIN = (
 )
 # Stream energy flow keys (used to derive battery power when KEY_BATTERY_POWER is absent)
 KEY_PV_SUM_W = ("powGetPvSum",)
+# Per-MPPT solar inputs on the Stream Ultra X (4 strings). Tuple order is the
+# fallback chain - if EcoFlow uses a different naming on a future firmware, the
+# new key just needs to be added to the tuple.
+KEY_PV1_W = (
+    "powGetPv1",
+    "powGetPv1InputW",
+    "powGetPv1Power",
+    "mppt1.inputPower",
+    "powGetMppt1",
+)
+KEY_PV2_W = (
+    "powGetPv2",
+    "powGetPv2InputW",
+    "powGetPv2Power",
+    "mppt2.inputPower",
+    "powGetMppt2",
+)
+KEY_PV3_W = (
+    "powGetPv3",
+    "powGetPv3InputW",
+    "powGetPv3Power",
+    "mppt3.inputPower",
+    "powGetMppt3",
+)
+KEY_PV4_W = (
+    "powGetPv4",
+    "powGetPv4InputW",
+    "powGetPv4Power",
+    "mppt4.inputPower",
+    "powGetMppt4",
+)
 KEY_SYS_LOAD_W = ("powGetSysLoad",)
 KEY_SYS_GRID_W = ("powGetSysGrid",)
 
@@ -268,6 +299,51 @@ SENSORS_PER_DEVICE: tuple[SensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfTime.MINUTES,
         icon="mdi:battery-discharging",
+    ),
+)
+
+
+# ----------------------------------------------- hybrid extras (PV1-PV4 inputs)
+# Some battery devices also expose solar MPPT inputs (Stream Ultra X has 4
+# strings). They are added to the battery profile so hybrid devices get full
+# coverage without a separate "hybrid" profile. Plain battery devices (Delta,
+# River) just won't have these keys and the sensors will report "No disponible".
+PV_SENSORS: tuple[SensorEntityDescription, ...] = (
+    SensorEntityDescription(
+        key="pv1_power",
+        translation_key="pv1_power",
+        name="PV1 Input",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        icon="mdi:solar-panel",
+    ),
+    SensorEntityDescription(
+        key="pv2_power",
+        translation_key="pv2_power",
+        name="PV2 Input",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        icon="mdi:solar-panel",
+    ),
+    SensorEntityDescription(
+        key="pv3_power",
+        translation_key="pv3_power",
+        name="PV3 Input",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        icon="mdi:solar-panel",
+    ),
+    SensorEntityDescription(
+        key="pv4_power",
+        translation_key="pv4_power",
+        name="PV4 Input",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        icon="mdi:solar-panel",
     ),
 )
 
@@ -504,6 +580,11 @@ async def async_setup_entry(
         else:
             for desc in SENSORS_PER_DEVICE:
                 entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
+            # Hybrid extras: PV1-PV4 inputs for devices that also have MPPT
+            # solar inputs (e.g. Stream Ultra X). Plain battery devices without
+            # these keys will just show "No disponible" — no harm done.
+            for desc in PV_SENSORS:
+                entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
         # Diagnostic sensors are always created (model + detected profile) so
         # any misdetection is immediately visible in HA without digging logs.
         for desc in DIAGNOSTIC_SENSORS:
@@ -599,6 +680,15 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             return _derive_remaining_min(quota, KEY_REMAIN_CHG_MIN, signed=True)
         if key == "remaining_discharge_time":
             return _derive_remaining_min(quota, KEY_REMAIN_DSG_MIN, signed=True)
+        # Hybrid PV inputs (Stream Ultra X etc.)
+        if key == "pv1_power":
+            return _to_float(_read(quota, KEY_PV1_W))
+        if key == "pv2_power":
+            return _to_float(_read(quota, KEY_PV2_W))
+        if key == "pv3_power":
+            return _to_float(_read(quota, KEY_PV3_W))
+        if key == "pv4_power":
+            return _to_float(_read(quota, KEY_PV4_W))
         # Panel sensors
         if key == "grid_power":
             return _to_float(_read(quota, KEY_PANEL_GRID_W))

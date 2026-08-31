@@ -70,6 +70,18 @@
       "remaining_discharge_time": {
         "name": "Discharge Remaining Time"
       },
+      "pv1_power": {
+        "name": "PV1 Input"
+      },
+      "pv2_power": {
+        "name": "PV2 Input"
+      },
+      "pv3_power": {
+        "name": "PV3 Input"
+      },
+      "pv4_power": {
+        "name": "PV4 Input"
+      },
       "grid_power": {
         "name": "Grid Power"
       },
