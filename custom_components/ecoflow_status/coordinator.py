@@ -41,10 +41,32 @@ class EcoFlowStatusCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]])
         self.client = client
         self.entry = entry
         self._selected_sns = list(selected_sns)
+        # sn -> productName (e.g. "Stream Ultra X", "Stream AC Pro"). Populated
+        # by the integration setup via list_devices(); the sensor platform uses
+        # this to pick battery vs panel sensors.
+        self.device_models: dict[str, str] = {}
 
     @property
     def selected_sns(self) -> list[str]:
         return self._selected_sns
+
+    async def async_refresh_device_models(self) -> None:
+        """Fetch the device list once at startup and cache productName per SN.
+
+        Done separately from the quota poll because the productName is only
+        available in /device/list, not in the per-device quota response.
+        """
+        try:
+            devices = await self.client.list_devices()
+        except EcoFlowAPIError as err:
+            _LOGGER.warning("Could not fetch device list for productName mapping: %s", err)
+            return
+        for d in devices:
+            sn = d.get("sn")
+            name = d.get("productName") or d.get("productType") or ""
+            if sn:
+                self.device_models[sn] = str(name)
+        _LOGGER.debug("Device models: %s", self.device_models)
 
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         """Fetch all-quota for every selected device. Fail loud if any device fails."""

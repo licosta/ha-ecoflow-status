@@ -34,6 +34,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     selected_sns: list[str] = list(entry.data.get(CONF_DEVICES, []))
     coordinator = EcoFlowStatusCoordinator(hass, client, entry, selected_sns)
+    # Fetch the device list once to map SN -> productName. The quota response
+    # doesn't include productName, so we need this to pick the right sensor
+    # set per device (battery vs panel).
+    await coordinator.async_refresh_device_models()
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

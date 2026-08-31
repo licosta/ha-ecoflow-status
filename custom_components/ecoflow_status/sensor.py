@@ -354,15 +354,19 @@ def _build_device_info(
 ) -> DeviceInfo:
     """Build HA DeviceInfo for one EcoFlow device using cached metadata.
 
-    Metadata (model, sw_version) is sourced from the first quota response
-    that contains `productName` / `productDetail` / `sn` fields, if any.
+    Prefers the productName from the device list (set up in __init__.py);
+    falls back to whatever is in the quota response, and finally to a generic
+    name from the last 6 chars of the SN.
     """
+    # Prefer the model from the device list (always present, set up in __init__).
+    model_name = None
+    if hasattr(coordinator, "device_models"):
+        model_name = coordinator.device_models.get(sn)
     quota = coordinator.data.get(sn) if coordinator.data else None
     name = None
     model = None
     sw_version = None
     if quota:
-        # EcoFlow returns a flat dict; sometimes product info is mixed in.
         for k in (
             "productName",
             "productType",
@@ -376,37 +380,40 @@ def _build_device_info(
             if k in quota and quota[k]:
                 model = str(quota[k])
                 break
-        for k in ("sn",):
-            pass
     if not name:
-        name = f"EcoFlow {sn[-6:]}"
+        name = model_name or f"EcoFlow {sn[-6:]}"
     return DeviceInfo(
         identifiers={(DOMAIN, sn)},
         manufacturer=MANUFACTURER,
-        model=model or "EcoFlow device",
+        model=model or model_name or "EcoFlow device",
         name=name,
         sw_version=sw_version,
         serial_number=sn,
     )
 
 
-def _detect_device_profile(quota: dict[str, Any] | None) -> str:
+def _detect_device_profile(
+    coordinator: EcoFlowStatusCoordinator, sn: str
+) -> str:
     """Return DEVICE_PROFILE_BATTERY or DEVICE_PROFILE_PANEL.
 
-    Looks at productName / productDetail from the quota. If the name contains
-    a panel/inverter hint (e.g. "Stream AC Pro", "PowerStream"), treat as panel.
-    Default to battery.
+    Prefers the productName from the coordinator's device list (populated in
+    __init__.py via /device/list, since the quota response does not include it).
+    Falls back to looking in the quota if the device list is unavailable.
     """
-    if not quota or not isinstance(quota, dict):
-        return DEVICE_PROFILE_BATTERY
     name_candidates: list[str] = []
-    for k in ("productName", "productDetail", "productType", "deviceName"):
-        v = quota.get(k)
-        if isinstance(v, str) and v:
-            name_candidates.append(v.lower())
+    name = coordinator.device_models.get(sn) if hasattr(coordinator, "device_models") else None
+    if name:
+        name_candidates.append(str(name).lower())
+    quota = coordinator.data.get(sn) if coordinator.data else None
+    if isinstance(quota, dict):
+        for k in ("productName", "productDetail", "productType", "deviceName"):
+            v = quota.get(k)
+            if isinstance(v, str) and v:
+                name_candidates.append(v.lower())
     for hint in PANEL_PRODUCT_HINTS:
-        for name in name_candidates:
-            if hint in name:
+        for n in name_candidates:
+            if hint in n:
                 return DEVICE_PROFILE_PANEL
     return DEVICE_PROFILE_BATTERY
 
@@ -429,8 +436,7 @@ async def async_setup_entry(
     coordinator: EcoFlowStatusCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[EcoFlowSensorEntity] = []
     for sn in coordinator.selected_sns:
-        quota = coordinator.data.get(sn) if coordinator.data else None
-        profile = _detect_device_profile(quota)
+        profile = _detect_device_profile(coordinator, sn)
         device_info = _build_device_info(coordinator, sn)
         if profile == DEVICE_PROFILE_PANEL:
             for desc in PANEL_SENSORS:
