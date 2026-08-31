@@ -128,11 +128,34 @@ KEY_PV4_W = (
 KEY_SYS_LOAD_W = ("powGetSysLoad",)
 KEY_SYS_GRID_W = ("powGetSysGrid",)
 
-# Panel / inverter keys (Stream AC Pro, PowerStream, Smart Home Panel)
-KEY_PANEL_GRID_W = ("powGetSysGrid", "gridConnectionPower")
-KEY_PANEL_SOLAR_W = ("powGetPvSum",)
-KEY_PANEL_LOAD_W = ("powGetSysLoad",)
-KEY_PANEL_BATTERY_W = ("powGetBpCms", "bmsBmsStatus.chargePower")
+# Panel / inverter keys (Stream AC Pro, PowerStream, Smart Home Panel).
+# Order matters: the FIRST key found wins. `gridConnectionPower` is the
+# real grid power on the Stream CA Pro; `powGetSysGrid` exists too but is
+# a different (always-0 on that firmware) metric, so we try the real one first.
+KEY_PANEL_GRID_W = (
+    "gridConnectionPower",   # Stream CA Pro (real grid power, 100-300W typical)
+    "powGetSysGrid",         # Some firmware variants
+    "gridPower",
+    "gridPowerW",
+    "powGetGrid",
+)
+KEY_PANEL_SOLAR_W = (
+    "powGetPvSum",           # Most Stream / Ultra X firmwares
+    "pvTotalPower",
+    "powGetPv",
+    "solarPower",
+)
+KEY_PANEL_LOAD_W = (
+    "powGetSysLoad",         # Stream / Ultra X
+    "sysLoadPower",
+    "powGetLoad",
+    "loadPower",
+)
+KEY_PANEL_BATTERY_W = (
+    "powGetBpCms",           # Stream CA Pro
+    "powGetBp",              # Stream Ultra X
+    "bmsBmsStatus.chargePower",  # Delta fallback
+)
 KEY_PANEL_FEED_IN_MODE = ("feedGridMode",)
 KEY_PANEL_BACKUP_SOC = ("backupReverseSoc",)
 KEY_PANEL_ENERGY_STRATEGY = (
@@ -146,6 +169,14 @@ def _read(quota: dict[str, Any], keys: tuple[str, ...]) -> Any | None:
         if k in quota:
             return quota[k]
     return None
+
+
+def _read_with_key(quota: dict[str, Any], keys: tuple[str, ...]) -> tuple[Any | None, str | None]:
+    """Like `_read` but also returns the matched key (for debug attributes)."""
+    for k in keys:
+        if k in quota:
+            return quota[k], k
+    return None, None
 
 
 def _to_float(value: Any) -> float | None:
@@ -638,6 +669,9 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
         self._attr_unique_id = f"{sn}_{description.key}"
         self._attr_device_info = device_info
         # entity_id will be: sensor.ecoflow_status_<last6>_<key>
+        # Cached for extra_state_attributes so users can see which quota key
+        # the integration actually used (or "none" when the value is None).
+        self._last_matched_key: str | None = None
 
     @property
     def available(self) -> bool:
@@ -712,23 +746,36 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             return _to_float(_read(quota, KEY_PV3_W))
         if key == "pv4_power":
             return _to_float(_read(quota, KEY_PV4_W))
-        # Panel sensors
+        # Panel sensors (track which quota key was actually used)
         if key == "grid_power":
-            return _to_float(_read(quota, KEY_PANEL_GRID_W))
+            v, k = _read_with_key(quota, KEY_PANEL_GRID_W)
+            self._last_matched_key = k
+            return _to_float(v)
         if key == "solar_power":
-            return _to_float(_read(quota, KEY_PANEL_SOLAR_W))
+            v, k = _read_with_key(quota, KEY_PANEL_SOLAR_W)
+            self._last_matched_key = k
+            return _to_float(v)
         if key == "system_load":
-            return _to_float(_read(quota, KEY_PANEL_LOAD_W))
+            v, k = _read_with_key(quota, KEY_PANEL_LOAD_W)
+            self._last_matched_key = k
+            return _to_float(v)
         if key == "panel_battery_power":
-            return _to_float(_read(quota, KEY_PANEL_BATTERY_W))
+            v, k = _read_with_key(quota, KEY_PANEL_BATTERY_W)
+            self._last_matched_key = k
+            return _to_float(v)
         if key == "feed_in_mode":
-            mode = _to_float(_read(quota, KEY_PANEL_FEED_IN_MODE))
+            v, k = _read_with_key(quota, KEY_PANEL_FEED_IN_MODE)
+            self._last_matched_key = k
+            mode = _to_float(v)
             return int(mode) if mode is not None else None
         if key == "backup_reserve_soc":
-            return _to_float(_read(quota, KEY_PANEL_BACKUP_SOC))
+            v, k = _read_with_key(quota, KEY_PANEL_BACKUP_SOC)
+            self._last_matched_key = k
+            return _to_float(v)
         if key == "energy_strategy":
-            sp = _read(quota, "energyStrategyOperateMode.operateSelfPoweredOpen")
-            sch = _read(quota, "energyStrategyOperateMode.operateIntelligentScheduleModeOpen")
+            sp, k1 = _read_with_key(quota, ("energyStrategyOperateMode.operateSelfPoweredOpen",))
+            sch, k2 = _read_with_key(quota, ("energyStrategyOperateMode.operateIntelligentScheduleModeOpen",))
+            self._last_matched_key = k1 or k2
             if sch is True or sch == "1" or sch == 1:
                 return "Scheduled"
             if sp is True or sp == "1" or sp == 1:
@@ -761,13 +808,19 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Expose the full raw quota for debugging key mismatches.
+        """Expose the full raw quota + matched key for debugging key mismatches.
 
-        The first 30 keys are enough to see all relevant quota entries for any
-        device family. Remove once KEY_* are confirmed for the user's devices.
+        - `matched_key`: the quota key the integration actually used to compute
+          this sensor's value (e.g. `gridConnectionPower`). `None` when the
+          value is `None` (key not found in the quota).
+        - `raw_quota_sample`: first 30 entries of the quota response, enough
+          to see all relevant keys for any device family.
         """
         quota = self.coordinator.data.get(self._sn) if self.coordinator.data else None
         if not quota or not isinstance(quota, dict):
-            return None
+            return {"matched_key": self._last_matched_key, "raw_quota_sample": None}
         items = list(quota.items())[:30]
-        return {"raw_quota_sample": dict(items)}
+        return {
+            "matched_key": self._last_matched_key,
+            "raw_quota_sample": dict(items),
+        }
