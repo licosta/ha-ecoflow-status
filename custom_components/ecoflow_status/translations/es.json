@@ -60,6 +60,15 @@
       },
       "soh": {
         "name": "Salud de la batería"
+      },
+      "cycles": {
+        "name": "Ciclos"
+      },
+      "remaining_charge_time": {
+        "name": "Tiempo restante de carga"
+      },
+      "remaining_discharge_time": {
+        "name": "Tiempo restante de descarga"
       }
     }
   }

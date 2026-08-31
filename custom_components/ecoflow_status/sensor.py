@@ -14,6 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfPower,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -46,6 +47,23 @@ KEY_DISCHARGE_W = (
     "inv.outputWatts",
     "pd.wattsOutSum",
 )
+# 0=idle, 1=discharging, 2=charging (newer devices like Stream Ultra / CA Pro)
+KEY_STATE_CODE_NEW = ("bms_emsStatus.sysChgDsgState",)
+# 1=discharging, 2=charging (no idle=0 convention, missing == idle)
+KEY_STATE_CODE_OLD = ("pd.chgDsgState",)
+KEY_CYCLES = (
+    "bmsBmsStatus.cycles",
+    "bms_emsStatus.cycles",
+)
+# Charging remaining minutes (positive while charging, may be 0/undefined when not)
+KEY_REMAIN_CHG_MIN = (
+    "bms_emsStatus.chgRemainTime",
+    "bmsBmsStatus.remainTime",  # signed: positive=charging, negative=discharging
+)
+# Discharging remaining minutes (positive while discharging, may be 0/undefined when not)
+KEY_REMAIN_DSG_MIN = (
+    "bms_emsStatus.dsgRemainTime",
+)
 
 
 def _read(quota: dict[str, Any], keys: tuple[str, ...]) -> Any | None:
@@ -75,6 +93,70 @@ def _derive_state(charge_w: float | None, discharge_w: float | None) -> str | No
     if d > POWER_THRESHOLD_W and c <= POWER_THRESHOLD_W:
         return STATE_DISCHARGING
     return STATE_STANDBY
+
+
+def _read_state_code(quota: dict[str, Any]) -> int | None:
+    """Read the device-reported charge state code.
+
+    Returns 0=idle, 1=discharging, 2=charging, or None when no key is present.
+    Prefers `bms_emsStatus.sysChgDsgState` (newer, 0=idle/1=dis/2=chg) and
+    falls back to `pd.chgDsgState` (older, 1=dis/2=chg, 0/missing = idle).
+    """
+    for key in KEY_STATE_CODE_NEW:
+        val = quota.get(key)
+        if val is not None:
+            try:
+                code = int(val)
+                if code in (0, 1, 2):
+                    return code
+            except (TypeError, ValueError):
+                pass
+    for key in KEY_STATE_CODE_OLD:
+        val = quota.get(key)
+        if val is not None:
+            try:
+                code = int(val)
+                if code in (1, 2):
+                    return code
+                if code == 0:
+                    return 0
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _state_from_code(code: int) -> str:
+    """Map an EcoFlow state code to our coarse state."""
+    if code == 2:
+        return STATE_CHARGING
+    if code == 1:
+        return STATE_DISCHARGING
+    return STATE_STANDBY
+
+
+def _derive_remaining_min(quota: dict[str, Any], keys: tuple[str, ...], signed: bool = False) -> float | None:
+    """Read a remaining-time value (minutes) from the quota, robust to None / bad data.
+
+    When `signed` is True, the value is treated as signed (positive=charging,
+    negative=discharging) and we return its absolute value. Otherwise we expect
+    a non-negative count of minutes.
+    """
+    for key in keys:
+        if key not in quota:
+            continue
+        val = quota[key]
+        if val is None:
+            continue
+        try:
+            minutes = float(val)
+        except (TypeError, ValueError):
+            continue
+        if signed:
+            minutes = abs(minutes)
+        if minutes < 0:
+            continue
+        return minutes
+    return None
 
 
 # --------------------------------------------------------------------- descriptions
@@ -119,6 +201,31 @@ SENSORS_PER_DEVICE: tuple[SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.BATTERY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
+    ),
+    SensorEntityDescription(
+        key="cycles",
+        translation_key="cycles",
+        name="Cycles",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:battery-sync",
+    ),
+    SensorEntityDescription(
+        key="remaining_charge_time",
+        translation_key="remaining_charge_time",
+        name="Charge Remaining Time",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        icon="mdi:battery-charging",
+    ),
+    SensorEntityDescription(
+        key="remaining_discharge_time",
+        translation_key="remaining_discharge_time",
+        name="Discharge Remaining Time",
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        icon="mdi:battery-discharging",
     ),
 )
 
@@ -220,6 +327,11 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             return None
         key = self.entity_description.key
         if key == "state":
+            # Prefer the device-reported code (more reliable on idle / low-power).
+            code = _read_state_code(quota)
+            if code is not None:
+                return _state_from_code(code)
+            # Fall back to deriving from current power.
             charge = _to_float(_read(quota, KEY_CHARGE_W))
             discharge = _to_float(_read(quota, KEY_DISCHARGE_W))
             return _derive_state(charge, discharge)
@@ -231,6 +343,13 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             return _to_float(_read(quota, KEY_SOC))
         if key == "soh":
             return _to_float(_read(quota, KEY_SOH))
+        if key == "cycles":
+            return _to_float(_read(quota, KEY_CYCLES))
+        if key == "remaining_charge_time":
+            # bmsBmsStatus.remainTime is signed: positive while charging.
+            return _derive_remaining_min(quota, KEY_REMAIN_CHG_MIN, signed=True)
+        if key == "remaining_discharge_time":
+            return _derive_remaining_min(quota, KEY_REMAIN_DSG_MIN, signed=True)
         return None
 
     @callback

@@ -60,6 +60,15 @@
       },
       "soh": {
         "name": "State of Health"
+      },
+      "cycles": {
+        "name": "Cycles"
+      },
+      "remaining_charge_time": {
+        "name": "Charge Remaining Time"
+      },
+      "remaining_discharge_time": {
+        "name": "Discharge Remaining Time"
       }
     }
   }

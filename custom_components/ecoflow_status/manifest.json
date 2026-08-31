@@ -1,7 +1,7 @@
 {
   "domain": "ecoflow_status",
   "name": "EcoFlow Status",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "documentation": "https://github.com/example/ha-ecoflow-status",
   "issue_tracker": "https://github.com/example/ha-ecoflow-status/issues",
   "codeowners": ["@example"],
