@@ -400,21 +400,38 @@ def _detect_device_profile(
     Prefers the productName from the coordinator's device list (populated in
     __init__.py via /device/list, since the quota response does not include it).
     Falls back to looking in the quota if the device list is unavailable.
+    Names are normalized (lowercase, spaces/dashes removed) so "Stream AC Pro"
+    and "StreamACPro" both match.
     """
+    import re as _re
+
+    def _norm(s: str) -> str:
+        return _re.sub(r"[\s_\-]+", "", s.lower())
+
     name_candidates: list[str] = []
     name = coordinator.device_models.get(sn) if hasattr(coordinator, "device_models") else None
     if name:
-        name_candidates.append(str(name).lower())
+        name_candidates.append(_norm(str(name)))
     quota = coordinator.data.get(sn) if coordinator.data else None
     if isinstance(quota, dict):
         for k in ("productName", "productDetail", "productType", "deviceName"):
             v = quota.get(k)
             if isinstance(v, str) and v:
-                name_candidates.append(v.lower())
-    for hint in PANEL_PRODUCT_HINTS:
-        for n in name_candidates:
-            if hint in n:
+                name_candidates.append(_norm(v))
+    norm_hints = tuple(_norm(h) for h in PANEL_PRODUCT_HINTS)
+    for n in name_candidates:
+        for hint in norm_hints:
+            if hint and hint in n:
+                _LOGGER.info(
+                    "EcoFlow device %s detected as PANEL (matched hint '%s' in '%s')",
+                    sn, hint, n,
+                )
                 return DEVICE_PROFILE_PANEL
+    if name_candidates:
+        _LOGGER.info(
+            "EcoFlow device %s detected as BATTERY (no panel hint matched; names tried: %s)",
+            sn, name_candidates,
+        )
     return DEVICE_PROFILE_BATTERY
 
 

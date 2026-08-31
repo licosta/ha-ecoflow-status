@@ -45,15 +45,19 @@ MIN_SCAN_INTERVAL: Final = 10
 MAX_SCAN_INTERVAL: Final = 300
 
 # Device profiles (battery vs panel/inverter). Detected from productName in
-# the quota response. Battery devices get the 8 battery sensors; panel devices
-# get the 7 panel sensors. Stream AC Pro is a panel, not a battery.
+# the device list response. Battery devices get the 8 battery sensors; panel
+# devices get the 7 panel sensors. Stream AC Pro is a panel, not a battery.
+# Hints are matched after normalizing the productName (lowercase, spaces/dashes
+# removed) so e.g. "Stream AC Pro", "StreamACPro", "stream-ac-pro" all match.
 DEVICE_PROFILE_BATTERY: Final = "battery"
 DEVICE_PROFILE_PANEL: Final = "panel"
 PANEL_PRODUCT_HINTS: Final[tuple[str, ...]] = (
-    "stream ac pro",
-    "stream ac",
-    "smart home panel",
+    "streamacpro",
+    "streamac",
+    "acp",
+    "smarthomepanel",
+    "smarthome",
     "powerstream",
-    "inverter",
     "microinverter",
+    "inverter",
 )
