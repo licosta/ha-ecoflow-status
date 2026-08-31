@@ -23,8 +23,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DEVICE_PROFILE_BATTERY,
+    DEVICE_PROFILE_HYBRID,
     DEVICE_PROFILE_PANEL,
     DOMAIN,
+    HYBRID_PRODUCT_HINTS,
     KNOWN_DEVICE_MODELS,
     MANUFACTURER,
     PANEL_PRODUCT_HINTS,
@@ -425,7 +427,7 @@ DIAGNOSTIC_SENSORS: tuple[SensorEntityDescription, ...] = (
         translation_key="device_profile",
         name="Device Profile",
         device_class=SensorDeviceClass.ENUM,
-        options=[DEVICE_PROFILE_BATTERY, DEVICE_PROFILE_PANEL],
+        options=[DEVICE_PROFILE_BATTERY, DEVICE_PROFILE_PANEL, DEVICE_PROFILE_HYBRID],
         icon="mdi:tag-outline",
     ),
 )
@@ -520,6 +522,17 @@ def _detect_device_profile(
             if isinstance(v, str) and v:
                 name_candidates.append(_norm(v))
     norm_hints = tuple(_norm(h) for h in PANEL_PRODUCT_HINTS)
+    hybrid_hints = tuple(_norm(h) for h in HYBRID_PRODUCT_HINTS)
+    # Check hybrid FIRST so that e.g. "Stream CA Pro" becomes hybrid
+    # instead of falling into the generic "streamacpro" panel hint.
+    for n in name_candidates:
+        for hint in hybrid_hints:
+            if hint and hint in n:
+                _LOGGER.info(
+                    "EcoFlow device %s detected as HYBRID (matched hint '%s' in '%s')",
+                    sn, hint, n,
+                )
+                return DEVICE_PROFILE_HYBRID
     for n in name_candidates:
         for hint in norm_hints:
             if hint and hint in n:
@@ -574,15 +587,25 @@ async def async_setup_entry(
     for sn in coordinator.selected_sns:
         profile = _detect_device_profile(coordinator, sn)
         device_info = _build_device_info(coordinator, sn)
-        if profile == DEVICE_PROFILE_PANEL:
+        if profile == DEVICE_PROFILE_HYBRID:
+            # Hybrid = battery + panel + PV1-4 + diagnostics. Used for devices
+            # like the Stream CA Pro and Stream Ultra X that carry both a
+            # battery and a grid-tie inverter.
+            for desc in SENSORS_PER_DEVICE:
+                entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
+            for desc in PANEL_SENSORS:
+                entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
+            for desc in PV_SENSORS:
+                entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
+        elif profile == DEVICE_PROFILE_PANEL:
             for desc in PANEL_SENSORS:
                 entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
         else:
             for desc in SENSORS_PER_DEVICE:
                 entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
-            # Hybrid extras: PV1-PV4 inputs for devices that also have MPPT
-            # solar inputs (e.g. Stream Ultra X). Plain battery devices without
-            # these keys will just show "No disponible" — no harm done.
+            # Plain battery devices may still have PV1-PV4 (Stream Ultra X is
+            # in this branch when the productName doesn't match a hybrid hint
+            # but the SN suffix does). No harm if the keys are absent.
             for desc in PV_SENSORS:
                 entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
         # Diagnostic sensors are always created (model + detected profile) so

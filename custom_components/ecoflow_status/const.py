@@ -51,6 +51,16 @@ MAX_SCAN_INTERVAL: Final = 300
 # removed) so e.g. "Stream AC Pro", "StreamACPro", "stream-ac-pro" all match.
 DEVICE_PROFILE_BATTERY: Final = "battery"
 DEVICE_PROFILE_PANEL: Final = "panel"
+# Hybrid devices carry BOTH a battery and a grid/inverter (Stream CA Pro,
+# Stream Ultra X). They get the full sensor set: 8 battery + 7 panel + 4 PV +
+# 2 diagnostics. PV1-PV4 only resolve on devices that actually have MPPT
+# inputs; otherwise they show "No disponible" harmlessly.
+DEVICE_PROFILE_HYBRID: Final = "hybrid"
+HYBRID_PRODUCT_HINTS: Final[tuple[str, ...]] = (
+    "streamacpro",  # Stream CA Pro (the user has 1N0006)
+    "streamca",     # Stream CA (without "Pro")
+    "streamultra",  # Stream Ultra X (the user has 5L0686)
+)
 PANEL_PRODUCT_HINTS: Final[tuple[str, ...]] = (
     "streamacpro",
     "streamac",

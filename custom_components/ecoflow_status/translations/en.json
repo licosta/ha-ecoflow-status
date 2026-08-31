@@ -115,7 +115,8 @@
         "name": "Device Profile",
         "state": {
           "battery": "Battery",
-          "panel": "Panel / Inverter"
+          "panel": "Panel / Inverter",
+          "hybrid": "Hybrid (Battery + Inverter)"
         }
       }
     }
