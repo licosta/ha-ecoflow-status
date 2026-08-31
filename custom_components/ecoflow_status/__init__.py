@@ -22,6 +22,16 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
+# Read the version from the manifest so the log banner reflects the code that's
+# actually running, not a hard-coded string that drifts on every release.
+try:
+    from importlib.metadata import version as _pkg_version
+    _INTEGRATION_VERSION: str = _pkg_version("ecoflow_status") or "unknown"
+except Exception:  # pragma: no cover - fallback if package metadata missing
+    _INTEGRATION_VERSION = "unknown"
+
+_LOGGER.info("EcoFlow Status integration v%s loading", _INTEGRATION_VERSION)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up EcoFlow Status from a config entry."""
@@ -41,6 +51,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    _LOGGER.info(
+        "EcoFlow Status v%s ready: %d device(s) [%s], models=%s",
+        _INTEGRATION_VERSION,
+        len(selected_sns),
+        ", ".join(selected_sns),
+        coordinator.device_models or "{}",
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

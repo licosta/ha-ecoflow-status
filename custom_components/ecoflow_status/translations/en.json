@@ -95,6 +95,16 @@
           "scheduled": "Scheduled",
           "standard": "Standard"
         }
+      },
+      "device_model": {
+        "name": "Device Model"
+      },
+      "device_profile": {
+        "name": "Device Profile",
+        "state": {
+          "battery": "Battery",
+          "panel": "Panel / Inverter"
+        }
       }
     }
   }

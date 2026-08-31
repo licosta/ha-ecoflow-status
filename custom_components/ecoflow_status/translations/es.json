@@ -95,6 +95,16 @@
           "scheduled": "Programada",
           "standard": "Estándar"
         }
+      },
+      "device_model": {
+        "name": "Modelo del dispositivo"
+      },
+      "device_profile": {
+        "name": "Perfil del dispositivo",
+        "state": {
+          "battery": "Batería",
+          "panel": "Panel / Inversor"
+        }
       }
     }
   }

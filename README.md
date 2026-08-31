@@ -19,13 +19,23 @@ Power Kit, PowerStream) should also work as long as they expose
 
 ## Sensors exposed per device
 
-| Entity | Device class | State class | Unit | Notes |
-|---|---|---|---|---|
-| `sensor.<name>_state` | enum | — | — | `Charging` / `Discharging` / `Standby` |
-| `sensor.<name>_charge_power` | power | measurement | W | Current charging power |
-| `sensor.<name>_discharge_power` | power | measurement | W | Current discharging power |
-| `sensor.<name>_soc` | battery | measurement | % | State of charge |
-| `sensor.<name>_soh` | battery | measurement | % | State of health |
+The integration picks a **profile per device** (battery vs panel/inverter) from
+the productName reported by the EcoFlow device list:
+
+- **Battery profile** (Stream Ultra X, Delta, River, etc.) — 8 sensors:
+  `State`, `Charge Power`, `Discharge Power`, `Battery (SoC)`, `State of Health`,
+  `Cycles`, `Charge Remaining Time`, `Discharge Remaining Time`.
+- **Panel / inverter profile** (Stream AC Pro, PowerStream, Smart Home Panel) —
+  7 sensors: `Grid Power`, `Solar Power`, `System Load`, `Battery Power (Panel)`,
+  `Feed-in Mode`, `Backup Reserve`, `Energy Strategy`.
+
+In addition, **two diagnostic sensors are always created** so you can see at a
+glance what the integration detected for each device:
+
+| Entity | What it shows |
+|---|---|
+| `sensor.<name>_device_model` | The productName returned by `/device/list` (e.g. `"Stream AC Pro"`) |
+| `sensor.<name>_device_profile` | The detected profile: `Battery` or `Panel / Inverter` |
 
 `<name>` is the last 6 characters of the device serial number, so entity_ids
 stay short and unique. You can rename them freely via the UI — the

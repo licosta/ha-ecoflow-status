@@ -60,4 +60,11 @@ PANEL_PRODUCT_HINTS: Final[tuple[str, ...]] = (
     "powerstream",
     "microinverter",
     "inverter",
+    "balcony",  # EU "Balkonkraftwerk" terminology
+    "micro",    # generic micro-inverter hint
+)
+# SN suffixes (last 6 chars) known to be panel-class devices. Used as a last
+# resort when the device list returns no usable productName for a device.
+PANEL_SN_SUFFIXES: Final[tuple[str, ...]] = (
+    "1N0006",   # Stream AC Pro (verified)
 )

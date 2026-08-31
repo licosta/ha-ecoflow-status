@@ -27,6 +27,7 @@ from .const import (
     DOMAIN,
     MANUFACTURER,
     PANEL_PRODUCT_HINTS,
+    PANEL_SN_SUFFIXES,
     POWER_THRESHOLD_W,
     STATE_CHARGING,
     STATE_DISCHARGING,
@@ -331,22 +332,29 @@ PANEL_SENSORS: tuple[SensorEntityDescription, ...] = (
 )
 
 
+# ------------------------------------------------------- diagnostic sensors (all)
+# Always created, regardless of detected profile. They show what the integration
+# actually saw from the EcoFlow API and what profile was picked, so any
+# misdetection is visible at a glance from the device page.
+DIAGNOSTIC_SENSORS: tuple[SensorEntityDescription, ...] = (
+    SensorEntityDescription(
+        key="device_model",
+        translation_key="device_model",
+        name="Device Model",
+        icon="mdi:information-outline",
+    ),
+    SensorEntityDescription(
+        key="device_profile",
+        translation_key="device_profile",
+        name="Device Profile",
+        device_class=SensorDeviceClass.ENUM,
+        options=[DEVICE_PROFILE_BATTERY, DEVICE_PROFILE_PANEL],
+        icon="mdi:tag-outline",
+    ),
+)
+
+
 # --------------------------------------------------------------------- platform
-
-
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    """Set up sensors from a config entry."""
-    coordinator: EcoFlowStatusCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[EcoFlowSensorEntity] = []
-    for sn in coordinator.selected_sns:
-        device_info = _build_device_info(coordinator, sn)
-        for desc in SENSORS_PER_DEVICE:
-            entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
-    async_add_entities(entities)
 
 
 def _build_device_info(
@@ -397,11 +405,15 @@ def _detect_device_profile(
 ) -> str:
     """Return DEVICE_PROFILE_BATTERY or DEVICE_PROFILE_PANEL.
 
-    Prefers the productName from the coordinator's device list (populated in
-    __init__.py via /device/list, since the quota response does not include it).
-    Falls back to looking in the quota if the device list is unavailable.
-    Names are normalized (lowercase, spaces/dashes removed) so "Stream AC Pro"
-    and "StreamACPro" both match.
+    Detection order (first match wins):
+    1. productName from the device list (populated in __init__.py via
+       /device/list, since the quota response does not include it).
+    2. productName / productDetail / productType / deviceName from the quota.
+    3. SN suffix (last 6 chars) matching a known panel SKU — last-resort
+       fallback so a missing/garbled productName still classifies correctly.
+
+    Names are normalized (lowercase, spaces/dashes/underscores removed) so
+    "Stream AC Pro", "StreamACPro" and "stream-ac-pro" all match.
     """
     import re as _re
 
@@ -427,10 +439,28 @@ def _detect_device_profile(
                     sn, hint, n,
                 )
                 return DEVICE_PROFILE_PANEL
+    # Fallback: known panel SN suffixes. Logs a louder warning because this
+    # means the device list didn't return a usable productName and we're
+    # inferring from the SN — the user should probably also report this.
+    sn_suffix = sn[-6:].upper() if sn else ""
+    if sn_suffix in {s.upper() for s in PANEL_SN_SUFFIXES}:
+        _LOGGER.warning(
+            "EcoFlow device %s detected as PANEL via SN-suffix fallback (suffix=%s). "
+            "No productName matched a known panel hint; please report this so the "
+            "hint list can be extended.",
+            sn, sn_suffix,
+        )
+        return DEVICE_PROFILE_PANEL
     if name_candidates:
         _LOGGER.info(
             "EcoFlow device %s detected as BATTERY (no panel hint matched; names tried: %s)",
             sn, name_candidates,
+        )
+    else:
+        _LOGGER.warning(
+            "EcoFlow device %s has no usable productName and no SN-suffix match; "
+            "defaulting to BATTERY profile.",
+            sn,
         )
     return DEVICE_PROFILE_BATTERY
 
@@ -461,6 +491,10 @@ async def async_setup_entry(
         else:
             for desc in SENSORS_PER_DEVICE:
                 entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
+        # Diagnostic sensors are always created (model + detected profile) so
+        # any misdetection is immediately visible in HA without digging logs.
+        for desc in DIAGNOSTIC_SENSORS:
+            entities.append(EcoFlowSensorEntity(coordinator, sn, desc, device_info))
     async_add_entities(entities)
 
 
@@ -574,6 +608,20 @@ class EcoFlowSensorEntity(CoordinatorEntity[EcoFlowStatusCoordinator], SensorEnt
             if sp is True or sp == "1" or sp == 1:
                 return "Self-powered"
             return "Standard"
+        # Diagnostic sensors (always present regardless of profile)
+        if key == "device_model":
+            # Prefer the cached productName from the device list (more reliable
+            # than the quota, which often omits it for Stream-series devices).
+            model = self.coordinator.device_models.get(self._sn)
+            if model:
+                return model
+            for k in ("productName", "productDetail", "productType", "deviceName"):
+                v = quota.get(k)
+                if isinstance(v, str) and v:
+                    return v
+            return None
+        if key == "device_profile":
+            return _detect_device_profile(self.coordinator, self._sn)
         return None
 
     @callback
