@@ -91,7 +91,9 @@ class EcoFlowClient:
 
     def _sign(self, params: dict[str, Any]) -> dict[str, str]:
         """Return the HTTP headers required to authenticate one request."""
-        nonce = str(random.randint(100000, 999999))  # 6-digit
+        # 5-6 digit nonce (matches tolwi/hassio-ecoflow-cloud; 6 strictly also works
+        # but the wider range is what the working reference uses).
+        nonce = str(random.randint(10000, 1000000))
         timestamp = str(int(time.time() * 1000))  # ms
         flat_items = self._flatten(params)
         flat_items.sort()  # sort by key (lexicographic)
@@ -104,12 +106,14 @@ class EcoFlowClient:
             plain.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
+        # NOTE: do NOT add Content-Type here. The EcoFlow API only needs accessKey,
+        # nonce, timestamp, sign headers (matches the working tolwi reference). Adding
+        # Content-Type can interact with proxies/ingresses in unexpected ways.
         return {
             "accessKey": self._access_key,
             "nonce": nonce,
             "timestamp": timestamp,
             "sign": sign,
-            "Content-Type": "application/json;charset=UTF-8",
         }
 
     # ------------------------------------------------------------------ transport
@@ -126,17 +130,27 @@ class EcoFlowClient:
 
         For signing, GET requests sign the query string and POST requests sign
         the JSON body — the result is sent in the same `sign` header.
+
+        The URL is built explicitly (rather than letting aiohttp append the
+        query string from `params=...`) so that what we sign is exactly what
+        gets sent. This matches the working tolwi reference and avoids any
+        aiohttp URL-encoding edge cases.
         """
         sign_payload = body if method == "POST" else (params or {})
         headers = self._sign(sign_payload)
         url = f"{self._base_url}{path}"
+        if method == "GET" and params:
+            # Build query string from the same sorted flat dict we signed.
+            flat_items = sorted(self._flatten(params).items())
+            qs = "&".join(f"{k}={v}" for k, v in flat_items)
+            url = f"{url}?{qs}"
         kwargs: dict[str, Any] = {
             "headers": headers,
             "timeout": aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
         }
         try:
             if method == "GET":
-                async with self._session.get(url, params=params, **kwargs) as resp:
+                async with self._session.get(url, **kwargs) as resp:
                     text = await resp.text()
             elif method == "POST":
                 async with self._session.post(url, json=body, **kwargs) as resp:
@@ -158,13 +172,14 @@ class EcoFlowClient:
         if not isinstance(payload, dict):
             raise EcoFlowAPIError(f"Unexpected response shape: {payload!r}")
         code = str(payload.get("code", ""))
-        if code == "0":
-            return payload.get("data") or {}
-        # Common error codes
-        if code in ("7000", "7001", "7002", "7003"):  # signature / auth errors
+        # 8521: signature is wrong (server saw a different signature than what we sent;
+        # usually means wrong region, bad keys, clock drift, or URL/query mismatch).
+        if code in ("7000", "7001", "7002", "7003", "8521"):
             raise EcoFlowAuthError(
                 f"EcoFlow authentication failed: {payload.get('message')} (code={code})"
             )
+        if code == "0":
+            return payload.get("data") or {}
         raise EcoFlowAPIError(
             f"EcoFlow API error: {payload.get('message')} (code={code})"
         )
